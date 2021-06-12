@@ -1,5 +1,3 @@
-
-
 #include "gnuplot.hpp"
 #include "sqlite3.h"
 #include <iostream>
@@ -7,11 +5,14 @@
 #include <iomanip>
 #include <string>
 #include <vector>
+#include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
 
 
 using namespace std;
+using namespace boost;
 
-// g++ -Wall -g -std=c++2a -ognup gnuplot_main.cpp gnuplot.hpp -lsqlite3
+// g++ -Wall -g -std=c++2a -ognup main.cpp gnuplot.hpp -lsqlite3
 // see: https://stackoverflow.com/questions/31146713/sqlite3-exec-callback-function-clarification
 
 string ToStdStr(const unsigned char *in){
@@ -24,12 +25,14 @@ int main(int argc, char* argv[]){
    int ret = 0;
    char *zErrMsg = 0;
    string errorStr;
-   const string dbFullPath("garage.db");
+   const string dbFullPath("/home/bjc/gdoor/exe/garage.db");
    const string dbSensorDataTable("readings");
    const string gnuplotpDataFile("readings.txt");
    sqlite3 *db;
    sqlite3_stmt *stmt;
-   
+
+   float max = -100.0f; // for max temp in query
+ 
    // open db use full path 
    int rc = sqlite3_open(dbFullPath.c_str(), &db);
    if(rc != SQLITE_OK) {
@@ -67,6 +70,15 @@ int main(int argc, char* argv[]){
                string temperature = ToStdStr(sqlite3_column_text(stmt, 1));
                string humidity = ToStdStr(sqlite3_column_text(stmt, 2));
                out << timestamp << "," << temperature << "," << humidity << endl;
+
+               // convert and compare to get temp max in query
+               // and ignore on error 
+               try {
+                  float value = lexical_cast<float>(temperature);
+                  if(value > max) max = value;
+               }
+               catch(const bad_lexical_cast &){} 
+
             } // end while 
 
          out.close();
@@ -139,11 +151,26 @@ int main(int argc, char* argv[]){
       gp("set format x '%H:%M'");
       gp("set ytics 0,10,100");
       gp("set xtics rotate by 45 offset -2.3,-1.2");
-      gp("plot [] [0:100] 'readings.txt' using 1:2 w l ls 1,'readings.txt' using 1:3 w l ls 2");
+      string plotString = "plot [] [0:placeholder] 'readings.txt' using 1:2 w l ls 1,'readings.txt' using 1:3 w l ls 2";
+
+      // adjust the y max range up if needed 
+      string rangeMax = "100";
+      if(max >= 100.0f){
+         
+         // ignore error and use default rangeMax
+         try {
+            rangeMax = lexical_cast<string>(static_cast<int>(max + 5));
+         }
+         catch(const bad_lexical_cast &){} 
+
+      } // end if 
+
+      replace_first(plotString, "placeholder", rangeMax);
+
+      gp(plotString.c_str());
 
       } // end if 
 
    return ret;
 } // end main
-
 
